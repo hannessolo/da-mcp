@@ -4,6 +4,7 @@ MCP server to interact with document authoring.
 
 Add to your chosen MCP client:
 
+```
 {
   "mcpServers": {
     "dark-alley": {
@@ -14,3 +15,4 @@ Add to your chosen MCP client:
     }
   }
 }
+```

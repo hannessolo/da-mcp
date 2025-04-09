@@ -88,7 +88,7 @@ server.tool("list-sources",
       let formattedOutput = `Found ${sourcesCount} source${sourcesCount !== 1 ? 's' : ''} at ${path}:\n\n`;
       
       data.forEach((source, index) => {
-        formattedOutput += `${index + 1}. ${source.name}${source.ext ? source.ext : ''}\n`;
+        formattedOutput += `${index + 1}. ${source.name}${source.ext ? `.${source.ext}` : ''}\n`;
         formattedOutput += `   Path: ${source.path}\n`;
         if (source.lastModified) {
           formattedOutput += `   Last Modified: ${source.lastModified}\n`;
@@ -109,6 +109,81 @@ server.tool("list-sources",
           formattedOutput += '\n';
         }
       });
+      
+      return {
+        content: [{ 
+          type: "text", 
+          text: formattedOutput
+        }]
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Error: ${errorMessage}`);
+      return {
+        content: [{ 
+          type: "text", 
+          text: `Error: ${errorMessage}` 
+        }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Add a tool to get a single source
+server.tool("get-source",
+  { 
+    org: z.string().describe("The organization"),
+    repo: z.string().describe("Name of the repository"),
+    path: z.string().describe("Path to the source file")
+  },
+  async ({ org, repo, path }) => {
+    console.error(`Getting source for org=${org} repo=${repo} path=${path}`);
+    
+    try {
+      // Make a request to the DA Admin API
+      const url = `${BASE_URL}/source/${encodeURIComponent(org)}/${encodeURIComponent(repo)}${path}`;
+      console.error(`Making request to: ${url}`);
+      
+      const headers: Record<string, string> = {
+        'Accept': 'text/html'
+      };
+
+      if (process.env.DA_ADMIN_API_TOKEN) {
+        headers['Authorization'] = `Bearer ${process.env.DA_ADMIN_API_TOKEN}`;
+      }
+
+      const response = await fetch(url, {
+        headers
+      });
+
+      if (!response.ok) {
+        console.error(`API request failed: ${response.status} ${response.statusText}`);
+        
+        // Try to get more detailed error information
+        let errorDetail = "";
+        try {
+          const errorData = await response.text();
+          errorDetail = ` - ${errorData}`;
+        } catch (e) {
+          // Ignore error parsing errors
+        }
+        
+        return {
+          content: [{ 
+            type: "text", 
+            text: `Error: ${response.status} ${response.statusText}${errorDetail}` 
+          }],
+          isError: true
+        };
+      }
+
+      const data = await response.text();
+      console.error(`Successfully retrieved source`);
+      
+      // Format the source details in a user-friendly way
+      let formattedOutput = `Source Content:\n\n`;
+      formattedOutput += data;
       
       return {
         content: [{ 

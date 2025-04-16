@@ -2,6 +2,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {createInterface} from "readline/promises";
 import fs from "fs";
+import http from "http";
+import url from "url";
 
 class MCPClient {
   constructor() {
@@ -133,11 +135,44 @@ class MCPClient {
   async cleanup() {
     await this.mcp.close();
   }
+
+  async startServer(port = 3000, basePrompt) {
+    const server = http.createServer(async (req, res) => {
+      if (req.method === 'GET') {
+        const parsedUrl = url.parse(req.url, true);
+        const query = parsedUrl.query.query;
+
+        if (!query) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Query parameter is required' }));
+          return;
+        }
+
+        try {
+          const response = await this.processQuery(query, basePrompt);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ response }));
+        } catch (error) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: error.message }));
+        }
+      } else {
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+      }
+    });
+
+    server.listen(port, () => {
+      console.log(`HTTP server running on port ${port}`);
+    });
+
+    return server;
+  }
 }
 
 async function main() {
   if (process.argv.length < 3) {
-    console.log("Usage: node index.ts <path_to_server_script>");
+    console.log("Usage: node index.ts <path_to_server_script> [--http]");
     return;
   }
   console.log("Connecting to MCP server...");
@@ -153,11 +188,20 @@ async function main() {
         - description: ${tool.description}
         - parameters: ${JSON.stringify(tool.input_schema, null, 2)}  
     `).join("\n")}`;
-    // Can you please tell me all the files under the path / ? The org is hannessolo and the site da-playground.
-    await mcpClient.chatLoop(promptWithTools);
+    
+    mcpClient.basePrompt = promptWithTools;
+
+    if (process.argv.includes('--http')) {
+      await mcpClient.startServer(3000, promptWithTools);
+      return;
+    } else {
+      await mcpClient.chatLoop(promptWithTools);
+    }
   } finally {
-    await mcpClient.cleanup();
-    process.exit(0);
+    if (!process.argv.includes('--http')) {
+      await mcpClient.cleanup();
+      process.exit(0);
+    }
   }
 }
 

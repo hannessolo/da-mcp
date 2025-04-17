@@ -7,22 +7,7 @@ export const createPageSchema = z.object({
   path: z.string().describe("Path where to create the new page")
 });
 
-export type CreatePageParams = z.infer<typeof createPageSchema>;
-
-type CreatePageResponse = {
-  source: {
-    editUrl: string;
-    contentUrl: string;
-    status: number;
-    props?: Record<string, unknown>;
-  };
-  aem: {
-    previewUrl: string;
-    liveUrl: string;
-  };
-};
-
-export async function createPage({ org, repo, path }: CreatePageParams) {
+export async function createPage({ org, repo, path }) {
   const normalizedPath = normalizePath(path);
   console.error(`Creating new page for org=${org} repo=${repo} path=${normalizedPath}`);
   
@@ -56,7 +41,7 @@ export async function createPage({ org, repo, path }: CreatePageParams) {
         return createErrorResponse(`Unexpected API response format. Expected object, got: ${JSON.stringify(data)}`);
       }
 
-      const responseData = data as CreatePageResponse;
+      const responseData = data;
       const sourceInfo = responseData.source;
       const aemInfo = responseData.aem;
       
@@ -77,7 +62,7 @@ export async function createPage({ org, repo, path }: CreatePageParams) {
     }
 
     return createSuccessResponse(`Successfully created new page at ${path}`);
-  } catch (error: unknown) {
+  } catch (error) {
     return createErrorResponse(error instanceof Error ? error.message : String(error));
   }
 } 

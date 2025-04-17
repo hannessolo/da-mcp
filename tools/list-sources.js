@@ -7,9 +7,7 @@ export const listSourcesSchema = z.object({
   path: z.string().describe("Path to list sources from")
 });
 
-export type ListSourcesParams = z.infer<typeof listSourcesSchema>;
-
-export async function listSources({ org, repo, path }: ListSourcesParams) {
+export async function listSources({ org, repo, path }) {
   console.error(`Listing sources for org=${org} repo=${repo} path=${path}`);
   
   try {
@@ -55,7 +53,7 @@ export async function listSources({ org, repo, path }: ListSourcesParams) {
     });
     
     return createSuccessResponse(formattedOutput);
-  } catch (error: unknown) {
+  } catch (error) {
     return createErrorResponse(error instanceof Error ? error.message : String(error));
   }
 } 

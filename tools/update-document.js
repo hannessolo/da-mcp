@@ -8,9 +8,7 @@ export const updateDocumentSchema = z.object({
   content: z.string().describe("The HTML content to update the document with")
 });
 
-export type UpdateDocumentParams = z.infer<typeof updateDocumentSchema>;
-
-export async function updateDocument({ org, repo, path, content }: UpdateDocumentParams) {
+export async function updateDocument({ org, repo, path, content }) {
   const normalizedPath = normalizePath(path);
   console.error(`Updating document for org=${org} repo=${repo} path=${normalizedPath}`);
   
@@ -30,7 +28,7 @@ export async function updateDocument({ org, repo, path, content }: UpdateDocumen
 
     await makeApiCall(url, options);
     return createSuccessResponse(`Successfully updated document at ${path}`);
-  } catch (error: unknown) {
+  } catch (error) {
     return createErrorResponse(error instanceof Error ? error.message : String(error));
   }
 } 

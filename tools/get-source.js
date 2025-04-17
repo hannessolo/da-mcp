@@ -7,9 +7,7 @@ export const getSourceSchema = z.object({
   path: z.string().describe("Path to the source file")
 });
 
-export type GetSourceParams = z.infer<typeof getSourceSchema>;
-
-export async function getSource({ org, repo, path }: GetSourceParams) {
+export async function getSource({ org, repo, path }) {
   const normalizedPath = normalizePath(path);
   console.error(`Getting source for org=${org} repo=${repo} path=${normalizedPath}`);
   
@@ -23,7 +21,7 @@ export async function getSource({ org, repo, path }: GetSourceParams) {
     const data = await response.text();
     console.error(`Successfully retrieved source`);
     return createSuccessResponse(`Source Content:\n\n${data}`);
-  } catch (error: unknown) {
+  } catch (error) {
     return createErrorResponse(error instanceof Error ? error.message : String(error));
   }
 } 

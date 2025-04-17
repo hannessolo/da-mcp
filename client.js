@@ -27,15 +27,18 @@ class MCPClient {
       const toolsResult = await this.mcp.listTools();
       this.tools = toolsResult.tools.map((tool) => {
         return {
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema,
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          }
         };
       });
       console.log(JSON.stringify(this.tools, null, 2));
       console.log(
         "Connected to server with tools:",
-        this.tools.map(({ name }) => name)
+        this.tools.map((tool) => tool.function.name)
       );
     } catch (e) {
       console.log("Failed to connect to MCP server: ", e);
@@ -43,16 +46,19 @@ class MCPClient {
     }
   }
 
-  async fetchAIResponse(query) {
-    const res = await fetch('http://localhost:11434/api/generate', {
+  async fetchAIResponse(messages) {
+    console.log(JSON.stringify(messages));
+
+    const res = await fetch('http://localhost:11434/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        prompt: query,
+        messages,
         model: 'hf.co/lmstudio-community/Qwen2.5-7B-Instruct-1M-GGUF:Q8_0',
         stream: false,
+        tools: this.tools,
       }),
     });
     
@@ -64,56 +70,56 @@ class MCPClient {
     if (data.error) {
       throw new Error(`Error from AI: ${data.error}`);
     }
-    return data.response.trim();
+    return data;
   }
 
-  async processQuery(query, basePrompt) {
-    const response = await this.fetchAIResponse(`${basePrompt} \n\nuser: ${query}`);
-
-    console.log("AI Response:", response);
+  async processQuery(messages) {
+    const response = await this.fetchAIResponse(messages);
   
     const finalText = [];
+
+    messages.push(response.message);
+
+    if (response.message.content) {
+      finalText.push(response.message.content);
+    }
+
+    let toolCalls = response.message.tool_calls;
+
+    console.log("Tool calls: ", toolCalls);
+
+    while (toolCalls?.length > 0) {
+      const promises = response.message.tool_calls?.map(async (toolCall) => {
+        if (!toolCall.function) { return; }
   
-    if (response.indexOf('##TOOL_CALL##') > 0) {
-      const toolCallStart = response.indexOf('##TOOL_CALL##') + '##TOOL_CALL##'.length;
-      const toolCallEnd = response.indexOf('##END##');
-      if (toolCallEnd === -1) {
-        throw new Error("Malformed response: Missing ##END##");
-      }
-
-      const toolCallJson = response.slice(toolCallStart, toolCallEnd).trim();
-      let toolCall;
-      try {
-        toolCall = JSON.parse(toolCallJson);
-      } catch (e) {
-        throw new Error(`Failed to parse tool call JSON: ${e}`);
-      }
-
-      if (!toolCall.mcp_tool || !toolCall.mcp_tool.name || !toolCall.mcp_tool.parameters) {
-        throw new Error("Malformed tool call JSON: Missing required fields");
-      }
-
-      console.log("Running tool --------");
-      const toolResult = await this.mcp.callTool({ name: toolCall.mcp_tool.name, arguments: toolCall.mcp_tool.parameters });
-      console.log("Done running tool --------");
-
-      const text = toolResult.content[0].text;
-
-      const toolAIResponse = await this.fetchAIResponse(`tool-caller: ${text}`);
-      
-      finalText.push(toolAIResponse);
-
-      console.log(JSON.stringify(toolResult, null, 2));
+        const toolResult = await this.mcp.callTool({ name: toolCall.function.name, arguments: toolCall.function.arguments });
+        return toolResult.content[0].text;
+      });
+  
+      const toolResults = await Promise.all(promises);
+  
+      toolResults.forEach((toolResult) => {
+        messages.push({ role: "tool", content: toolResult });
+      });
+  
+      const toolResponse = await this.fetchAIResponse(messages);
+      messages.push(toolResponse.message);
+      finalText.push(toolResponse.message.content);
+      toolCalls = toolResponse.message.tool_calls;
     }
   
     return finalText.join("\n");
   }
 
-  async chatLoop(basePrompt) {
+  async chatLoop() {
     const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });
+
+    // const basePrompt = fs.readFileSync('prompt.txt', 'utf-8');
+    const basePrompt = "You are a helpful assistant. Answer the user's questions and provide information as needed.";
+    const messages = [{ role: "system", content: basePrompt }];
   
     try {
       console.log("\nMCP Client Started!");
@@ -124,9 +130,14 @@ class MCPClient {
         if (message.toLowerCase() === "quit") {
           break;
         }
-        const response = await this.processQuery(message, basePrompt);
+
+        messages.push({ role: "user", content: message });
+
+        const response = await this.processQuery(messages);
         console.log("\n" + response);
       }
+    } catch(e) {
+      console.error(e);
     } finally {
       rl.close();
     }
@@ -136,29 +147,54 @@ class MCPClient {
     await this.mcp.close();
   }
 
-  async startServer(port = 3000, basePrompt) {
+  async startServer(port = 3000) {
     const server = http.createServer(async (req, res) => {
-      if (req.method === 'GET') {
-        const parsedUrl = url.parse(req.url, true);
-        const query = parsedUrl.query.query;
+      // Set CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-        if (!query) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Query parameter is required' }));
-          return;
-        }
+      // Handle preflight requests
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
 
-        try {
-          const response = await this.processQuery(query, basePrompt);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ response }));
-        } catch (error) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: error.message }));
-        }
-      } else {
+      // Only handle POST requests
+      if (req.method !== 'POST') {
         res.writeHead(405, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+
+      try {
+        // Parse request body
+        let body = '';
+        req.on('data', chunk => {
+          body += chunk.toString();
+        });
+
+        req.on('end', async () => {
+          try {
+            const { messages } = JSON.parse(body);
+            
+            if (!Array.isArray(messages)) {
+              throw new Error('Messages must be an array');
+            }
+
+            const response = await this.processQuery(messages);
+            
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ response }));
+          } catch (error) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+          }
+        });
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal server error' }));
       }
     });
 
@@ -177,25 +213,15 @@ async function main() {
   }
   console.log("Connecting to MCP server...");
 
-  const prompt = fs.readFileSync('prompt.txt', 'utf-8');
-
   const mcpClient = new MCPClient();
   try {
     await mcpClient.connectToServer(process.argv[2]);
-    const promptWithTools = `${prompt}\n\nAVAILABLE TOOLS:\n${mcpClient.tools.map((tool) => `
-      - ${tool.name}
-        - name: ${tool.name}
-        - description: ${tool.description}
-        - parameters: ${JSON.stringify(tool.input_schema, null, 2)}  
-    `).join("\n")}`;
-    
-    mcpClient.basePrompt = promptWithTools;
 
     if (process.argv.includes('--http')) {
-      await mcpClient.startServer(3000, promptWithTools);
+      await mcpClient.startServer(3001);
       return;
     } else {
-      await mcpClient.chatLoop(promptWithTools);
+      await mcpClient.chatLoop();
     }
   } finally {
     if (!process.argv.includes('--http')) {

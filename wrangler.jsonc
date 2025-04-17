@@ -1,0 +1,28 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "da-mcp-worker",
+	"main": "./worker.js",
+	"compatibility_date": "2025-04-17",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "DA_MCP",
+				"class_name": "DaMcp"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"new_sqlite_classes": ["DaMcp"],
+			"tag": "v1"
+		}
+	]
+}

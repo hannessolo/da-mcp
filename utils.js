@@ -66,5 +66,15 @@ export async function makeApiCall(
 
 // Helper function to ensure path ends with .html
 export function normalizePath(path) {
-  return path.endsWith('.html') ? path : `${path}.html`;
+  let normalizedPath = path;
+
+  if (!normalizedPath.startsWith('/')) {
+    normalizedPath = '/' + normalizedPath;
+  }
+
+  if (!normalizedPath.endsWith('.html')) {
+    normalizedPath += '.html';
+  }
+
+  return normalizedPath;
 } 

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build:client": "tsc client.ts && chmod 755 build/client.js",
-    "bundle": "esbuild index.ts --bundle --platform=node --target=es2018 --format=cjs --define:globalThis=global --outfile=dist/da-admin-mcp.cjs",
+    "bundle": "esbuild index.js --bundle --platform=node --target=es2018 --format=cjs --define:globalThis=global --outfile=dist/da-admin-mcp.cjs",
     "debug": "npx @modelcontextprotocol/inspector node dist/da-admin-mcp.cjs",
     "build:server": "tsc sse-server && chmod 755 build/sse-server.js",
     "dev:worker": "wrangler dev",
